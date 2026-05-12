@@ -1,0 +1,35 @@
+{
+  "id": "vendor_compliance_2026",
+  "name": "Vendor Compliance Playbook",
+  "description": "Standard for vendor/supplier compliance and procurement contracts.",
+  "contract_type": "VENDOR",
+  "version": "2026.1",
+  "critical_clauses": ["data_protection", "security_requirements", "audit_rights", "insurance", "assignment"],
+  "risk_thresholds": {
+    "data_protection": {
+      "required": ["GDPR compliance clause", "data processing agreement", "breach notification within 72h"],
+      "red_flags": ["no GDPR mention", "no breach notification", "data retention unlimited"]
+    },
+    "security_requirements": {
+      "required": ["ISO 27001 or equivalent", "annual pen testing", "encryption at rest and in transit"],
+      "red_flags": ["no security standards specified", "no audit right for security incidents"]
+    },
+    "audit_rights": {
+      "acceptable": "annual audit with 30 days notice",
+      "red_flags": ["no audit right", "notice > 60 days", "costs fully borne by auditing party"]
+    },
+    "insurance": {
+      "required_types": ["professional indemnity", "public liability", "cyber insurance"],
+      "minimum_cover_gbp": 1000000,
+      "red_flags": ["no insurance requirement", "cover < £1M", "no certificate required"]
+    },
+    "assignment": {
+      "acceptable": "neither party may assign without written consent",
+      "red_flags": ["free assignment to any third party", "no change-of-control protection"]
+    }
+  },
+  "standard_clauses": {
+    "data_protection": "Each party shall comply with applicable data protection legislation including the UK GDPR. The Supplier shall notify the Customer of any personal data breach within 72 hours of becoming aware.",
+    "audit_rights": "The Customer shall have the right to audit the Supplier's compliance with this Agreement upon 30 days' written notice, no more than once per calendar year."
+  }
+}

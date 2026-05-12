@@ -1,0 +1,38 @@
+{
+  "id": "msa_standard_2026",
+  "name": "Master Services Agreement Playbook",
+  "description": "Firm standard for MSA / Professional Services agreements.",
+  "contract_type": "MSA",
+  "version": "2026.1",
+  "critical_clauses": ["indemnity", "limitation_of_liability", "ip_ownership", "payment_terms", "sla_terms"],
+  "risk_thresholds": {
+    "indemnity": {
+      "acceptable": "mutual, capped at contract value",
+      "red_flags": ["uncapped indemnity", "unlimited consequential loss", "broad IP indemnity with no carve-outs"]
+    },
+    "limitation_of_liability": {
+      "acceptable_cap": "12 months contract value",
+      "red_flags": ["no liability cap", "cap below 3 months fees", "excludes gross negligence carve-out"]
+    },
+    "payment_terms": {
+      "acceptable_days": 30,
+      "red_flags": ["payment > 60 days", "no late payment interest", "payment contingent on third-party approval"]
+    },
+    "ip_ownership": {
+      "acceptable": "customer owns bespoke deliverables; supplier retains background IP and tools",
+      "red_flags": ["supplier owns all deliverables", "no licence-back for pre-existing IP"]
+    },
+    "sla_terms": {
+      "acceptable_uptime": "99.5%",
+      "red_flags": ["no SLA defined", "credits < 5% monthly fee", "no escalation path"]
+    },
+    "termination_for_convenience": {
+      "acceptable_notice_days": 90,
+      "red_flags": ["no termination right", "notice > 180 days", "termination fees > 3 months"]
+    }
+  },
+  "standard_clauses": {
+    "limitation_of_liability": "Neither party shall be liable for any indirect, special, incidental or consequential losses. Each party's total aggregate liability shall not exceed the total fees paid or payable in the twelve months prior to the claim.",
+    "indemnity": "Each party shall indemnify the other against direct losses arising from its breach of this Agreement, limited to the liability cap set out herein."
+  }
+}

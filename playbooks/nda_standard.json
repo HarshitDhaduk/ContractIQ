@@ -1,0 +1,35 @@
+{
+  "id": "nda_standard_2026",
+  "name": "Standard NDA Playbook",
+  "description": "Firm standard for Non-Disclosure Agreements. Mutual NDA preferred.",
+  "contract_type": "NDA",
+  "version": "2026.1",
+  "critical_clauses": ["confidentiality", "ip_ownership", "non_compete", "governing_law"],
+  "risk_thresholds": {
+    "confidentiality": {
+      "standard_duration_years": [2, 5],
+      "acceptable_scope": "mutual",
+      "red_flags": ["perpetual", "one-sided only", "no carve-outs for public domain"]
+    },
+    "ip_ownership": {
+      "acceptable": "each party retains its own pre-existing IP",
+      "red_flags": ["all IP assigned to counterparty", "work-for-hire with no carve-out"]
+    },
+    "non_compete": {
+      "acceptable_duration_months": 12,
+      "red_flags": ["duration > 24 months", "global scope", "no geographic limitation"]
+    },
+    "governing_law": {
+      "preferred": ["England and Wales", "New York", "Delaware"],
+      "red_flags": ["jurisdiction with no IP enforcement", "arbitration only with no appeal"]
+    },
+    "termination_for_convenience": {
+      "acceptable_notice_days": 30,
+      "red_flags": ["no termination right", "notice > 90 days"]
+    }
+  },
+  "standard_clauses": {
+    "confidentiality": "Each party agrees to maintain in strict confidence all Confidential Information received from the other party and not to disclose such information to any third party without prior written consent.",
+    "governing_law": "This Agreement shall be governed by and construed in accordance with the laws of England and Wales."
+  }
+}

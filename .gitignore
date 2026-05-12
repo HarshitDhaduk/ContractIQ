@@ -1,0 +1,37 @@
+# Root
+.env
+.env.local
+*.pyc
+__pycache__/
+.DS_Store
+Thumbs.db
+
+# Python venv
+backend/.venv/
+backend/venv/
+backend/*.egg-info/
+backend/dist/
+backend/build/
+backend/__pycache__/
+
+# Firebase service account (NEVER commit)
+backend/firebase-service-account.json
+backend/firebase-*.json
+
+# Next.js
+frontend/.next/
+frontend/out/
+frontend/node_modules/
+
+# ADK
+.adk/
+adk_sessions/
+
+# GCP / gcloud
+.gcloud/
+application_default_credentials.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
