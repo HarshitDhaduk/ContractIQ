@@ -64,8 +64,8 @@ class ReviewOverride(BaseModel):
 
 
 class ReviewDecision(BaseModel):
-    job_id: str
-    contract_id: str
+    job_id: Optional[str] = None
+    contract_id: Optional[str] = None
     action: Literal["APPROVE", "OVERRIDE", "ESCALATE"]
     reviewer_id: Optional[str] = None
     notes: Optional[str] = None

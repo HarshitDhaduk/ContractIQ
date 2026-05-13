@@ -3,8 +3,12 @@ import asyncio
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
+import os
 from agents.orchestrator import root_agent
 from config import settings
+
+# Ensure Google SDK can find the API key
+os.environ["GOOGLE_API_KEY"] = settings.GEMINI_API_KEY
 
 
 async def run_contract_review(job: dict) -> dict:
@@ -53,12 +57,15 @@ async def run_contract_review(job: dict) -> dict:
         ],
     )
 
-    result = await runner.run_async(
+    final_result = None
+    async for step_result in runner.run_async(
         user_id=job["user_id"],
         session_id=session.id,
         new_message=user_message,
-    )
-    return {"job_id": job["job_id"], "result": str(result)}
+    ):
+        final_result = step_result
+    
+    return {"job_id": job["job_id"], "result": str(final_result)}
 
 
 if __name__ == "__main__":

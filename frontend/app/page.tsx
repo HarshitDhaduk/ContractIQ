@@ -1,87 +1,292 @@
 "use client";
+
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useEffect } from "react";
 import { motion } from "framer-motion";
-import { Shield, Zap, FileCheck, ArrowRight } from "lucide-react";
+import {
+  ShieldCheck, ArrowRight, FileSearch, BarChart3,
+  GitMerge, Users, Lock, Cpu, CheckCircle2, ChevronRight,
+} from "lucide-react";
+
+const FEATURES = [
+  { icon: FileSearch, title: "Intelligent Extraction", desc: "40+ clause types identified in a single pass — no chunking, no retrieval loss." },
+  { icon: BarChart3,  title: "Risk Scoring",           desc: "Every clause rated 0–100 against your firm's playbook with HIGH / MEDIUM / LOW flags." },
+  { icon: GitMerge,   title: "AI Redlines",             desc: "Automated rewrites for non-standard clauses styled to your firm's precedents." },
+  { icon: Users,      title: "Human-in-the-Loop",       desc: "Lawyers approve, override, or escalate from a structured review queue." },
+  { icon: Lock,       title: "Governance Ready",        desc: "Audit trails, role-based access, and Firebase Auth with Google Sign-In." },
+  { icon: Cpu,        title: "2M Token Context",        desc: "Entire contracts processed at once by Gemini — no information loss." },
+];
+
+const PIPELINE = [
+  { n: "01", label: "Ingest",  desc: "Upload PDFs or DOCXs in batch" },
+  { n: "02", label: "Extract", desc: "AI identifies all clause types" },
+  { n: "03", label: "Score",   desc: "Risk-rated against your playbook" },
+  { n: "04", label: "Redline", desc: "Rewrites for flagged clauses" },
+  { n: "05", label: "Review",  desc: "Lawyer approves or escalates" },
+  { n: "06", label: "Export",  desc: "JSON, DOCX, and PDF summary" },
+];
+
+const STATS = [
+  { value: "2M",  label: "Token Context" },
+  { value: "40+", label: "Clause Types" },
+  { value: "6",   label: "AI Agents" },
+  { value: "24h", label: "Review SLA" },
+];
+
+const TRUST_ITEMS = [
+  "Firebase Auth with Google Sign-In",
+  "Full audit trail on every contract action",
+  "Human-in-the-loop approval gates",
+  "Role-based access control",
+  "Auto-approve only below configurable risk threshold",
+  "Structured export for legal record-keeping",
+];
+
+function FadeUp({ children, delay = 0, className = "" }: { children: React.ReactNode; delay?: number; className?: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 22 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.55, delay, ease: [0.25, 0.1, 0.25, 1] as const }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+function FadeUpInView({ children, delay = 0, className = "" }: { children: React.ReactNode; delay?: number; className?: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 22 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ duration: 0.55, delay, ease: [0.25, 0.1, 0.25, 1] as const }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
+}
 
 export default function LandingPage() {
   const { user, loading, signInWithGoogle } = useAuth();
   const router = useRouter();
 
-  useEffect(() => {
-    if (!loading && user) router.push("/dashboard");
-  }, [user, loading, router]);
-
-  const features = [
-    { icon: Zap, title: "2M Token Context", desc: "Entire contract batch processed in one pass — no chunking, no retrieval loss." },
-    { icon: FileCheck, title: "40+ Clause Types", desc: "Indemnity, IP, payment terms, termination rights — all extracted and scored automatically." },
-    { icon: Shield, title: "Risk Playbook", desc: "Every clause scored against your firm's standard. HIGH / MEDIUM / LOW with plain-English rationale." },
-  ];
+  const handleMainAction = () => {
+    if (user) router.push("/dashboard");
+    else signInWithGoogle();
+  };
 
   return (
-    <main className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden px-6">
-      {/* Background grid */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(99,102,241,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(99,102,241,0.03)_1px,transparent_1px)] bg-[size:64px_64px]" />
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none" />
+    <div className="min-h-screen bg-[#0a0f1e] text-slate-100" style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
 
-      <motion.div
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="relative z-10 flex flex-col items-center text-center max-w-4xl"
-      >
-        {/* Badge */}
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 text-xs font-semibold tracking-widest uppercase mb-6">
-          <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
-          Powered by Google ADK + Gemini
-        </div>
-
-        <h1 className="text-6xl md:text-7xl font-extrabold tracking-tight bg-gradient-to-b from-white via-slate-200 to-slate-400 bg-clip-text text-transparent mb-4 leading-none">
-          ContractIQ
-        </h1>
-        <p className="text-xl text-slate-400 max-w-2xl mb-10 leading-relaxed">
-          AI-powered multi-agent contract intelligence. Upload 100s of contracts,
-          extract all key clauses, score risk against your playbook, and get redlines
-          ready for one-click human approval.
-        </p>
-
-        {/* CTA */}
-        <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
-          onClick={signInWithGoogle}
-          className="group flex items-center gap-3 px-8 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-lg transition-all shadow-[0_0_40px_rgba(99,102,241,0.3)] hover:shadow-[0_0_60px_rgba(99,102,241,0.5)]"
-        >
-          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#fff" />
-            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#fff" opacity="0.85" />
-            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#fff" opacity="0.7" />
-            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#fff" opacity="0.6" />
-          </svg>
-          Sign in with Google
-          <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-        </motion.button>
-
-        {/* Feature cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-20 w-full">
-          {features.map((f, i) => (
-            <motion.div
-              key={f.title}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 + i * 0.1 }}
-              className="glass glass-hover p-6 text-left"
-            >
-              <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center mb-4">
-                <f.icon className="w-5 h-5 text-indigo-400" />
+      {/* ── Fixed Nav ─────────────────────────────────────────────────── */}
+      <header className="fixed top-0 inset-x-0 z-50 border-b border-white/[0.06]" style={{ background: "rgba(10,15,30,0.85)", backdropFilter: "blur(14px)" }}>
+        <div className="max-w-6xl mx-auto px-6 h-[64px] flex items-center justify-between">
+          <div className="flex items-center gap-2.5 font-semibold text-[15px] tracking-tight">
+            <ShieldCheck className="w-5 h-5 text-blue-400" />
+            ContractIQ
+          </div>
+          <nav className="hidden md:flex items-center gap-8 text-sm text-slate-400">
+            <a href="#features" className="hover:text-white transition-colors duration-150">Features</a>
+            <a href="#pipeline" className="hover:text-white transition-colors duration-150">How it works</a>
+            <a href="#trust"    className="hover:text-white transition-colors duration-150">Trust &amp; Security</a>
+          </nav>
+          {user ? (
+            <Link href="/dashboard" className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/10 hover:bg-white/[0.08] transition-all max-w-[200px]">
+              <div className="w-6 h-6 rounded-full bg-blue-600/30 flex items-center justify-center text-[10px] font-bold text-blue-400 uppercase shrink-0">
+                {user.displayName?.[0] || user.email?.[0]}
               </div>
-              <h3 className="font-semibold text-white mb-1">{f.title}</h3>
-              <p className="text-sm text-slate-400 leading-relaxed">{f.desc}</p>
-            </motion.div>
+              <span className="text-xs font-medium text-slate-300 truncate">
+                {user.displayName || user.email?.split('@')[0]}
+              </span>
+            </Link>
+          ) : (
+            <button
+              onClick={signInWithGoogle}
+              className="text-sm font-medium px-4 py-2 rounded-lg border border-white/10 text-slate-300 transition-all duration-150 hover:bg-white/5 hover:text-white"
+            >
+              Sign in
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* ── Hero ──────────────────────────────────────────────────────── */}
+      <section className="pt-[140px] pb-[112px] px-6">
+        <div className="max-w-4xl mx-auto text-center">
+          <FadeUp delay={0}>
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-blue-500/30 bg-blue-500/10 text-xs font-medium text-blue-300 mb-8">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+              Powered by Google ADK · Gemini Pro · 2M Token Context
+            </div>
+          </FadeUp>
+
+          <FadeUp delay={0.08}>
+            <h1 className="text-[52px] sm:text-[64px] lg:text-[76px] font-bold tracking-tight leading-[1.06] mb-6">
+              AI-powered contract review
+              <br />
+              <span className="text-blue-400">built for legal teams.</span>
+            </h1>
+          </FadeUp>
+
+          <FadeUp delay={0.16}>
+            <p className="text-lg text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+              Deploy a coordinated team of AI agents to extract, score, and redline hundreds of contracts
+              in minutes — with full audit trails and human oversight.
+            </p>
+          </FadeUp>
+
+          <FadeUp delay={0.24} className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <button
+              onClick={handleMainAction}
+              className="group inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg transition-colors duration-150 text-sm"
+            >
+              {user ? "Go to Dashboard" : "Get started free"}
+              <ArrowRight className="w-4 h-4 transition-transform duration-150 group-hover:translate-x-0.5" />
+            </button>
+            <a
+              href="#pipeline"
+              className="inline-flex items-center gap-2 px-6 py-3 border border-white/10 text-slate-300 hover:text-white hover:border-white/20 rounded-lg transition-all duration-150 text-sm"
+            >
+              See how it works
+              <ChevronRight className="w-4 h-4" />
+            </a>
+          </FadeUp>
+        </div>
+      </section>
+
+      {/* ── Stats bar ─────────────────────────────────────────────────── */}
+      <section className="border-y border-white/[0.06] bg-white/[0.025]">
+        <div className="max-w-4xl mx-auto px-6 py-10 grid grid-cols-2 md:grid-cols-4 gap-8">
+          {STATS.map((s, i) => (
+            <FadeUpInView key={i} delay={i * 0.06} className="text-center">
+              <div className="text-3xl font-bold text-white mb-1">{s.value}</div>
+              <div className="text-xs text-slate-500 uppercase tracking-widest">{s.label}</div>
+            </FadeUpInView>
           ))}
         </div>
-      </motion.div>
-    </main>
+      </section>
+
+      {/* ── Features ──────────────────────────────────────────────────── */}
+      <section id="features" className="py-24 px-6">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-14">
+            <FadeUpInView>
+              <h2 className="text-3xl font-bold mb-3">Everything your legal team needs</h2>
+              <p className="text-slate-400 text-sm max-w-lg mx-auto">
+                From ingestion to export — a complete contract intelligence workflow with governance controls at every step.
+              </p>
+            </FadeUpInView>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {FEATURES.map(({ icon: Icon, title, desc }, i) => (
+              <FadeUpInView key={i} delay={i * 0.05}>
+                <div className="p-6 rounded-xl border border-white/[0.07] bg-white/[0.025] hover:bg-white/[0.04] hover:border-white/[0.12] transition-all duration-200 group h-full">
+                  <div className="w-9 h-9 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-4 group-hover:bg-blue-500/20 transition-colors duration-200">
+                    <Icon className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <h3 className="font-semibold text-sm text-white mb-2">{title}</h3>
+                  <p className="text-sm text-slate-500 leading-relaxed">{desc}</p>
+                </div>
+              </FadeUpInView>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Pipeline ──────────────────────────────────────────────────── */}
+      <section id="pipeline" className="py-24 px-6 border-t border-white/[0.06]">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-14">
+            <FadeUpInView>
+              <h2 className="text-3xl font-bold mb-3">The agent pipeline</h2>
+              <p className="text-slate-400 text-sm">Six specialized agents, one coordinated workflow.</p>
+            </FadeUpInView>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 border border-white/[0.07] rounded-2xl overflow-hidden">
+            {PIPELINE.map(({ n, label, desc }, i) => (
+              <FadeUpInView key={i} delay={i * 0.05}>
+                <div
+                  className="p-6 hover:bg-white/[0.03] transition-colors duration-200"
+                  style={{
+                    borderRight: i % 3 !== 2 ? "1px solid rgba(255,255,255,0.06)" : "none",
+                    borderBottom: i < 3 ? "1px solid rgba(255,255,255,0.06)" : "none",
+                  }}
+                >
+                  <div className="text-xs font-mono text-blue-500 mb-3">{n}</div>
+                  <div className="font-semibold text-white text-sm mb-1">{label}</div>
+                  <div className="text-xs text-slate-500">{desc}</div>
+                </div>
+              </FadeUpInView>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Trust & Security ──────────────────────────────────────────── */}
+      <section id="trust" className="py-24 px-6 border-t border-white/[0.06]">
+        <div className="max-w-4xl mx-auto">
+          <FadeUpInView>
+            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-10 md:p-14">
+              <div className="flex flex-col md:flex-row gap-12 items-start">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 text-blue-400 text-sm font-medium mb-4">
+                    <ShieldCheck className="w-4 h-4" />
+                    Trust &amp; Governance
+                  </div>
+                  <h2 className="text-2xl font-bold mb-4">Built with compliance in mind</h2>
+                  <p className="text-slate-400 text-sm leading-relaxed">
+                    ContractIQ is designed for regulated legal environments. Every action is logged,
+                    every decision is traceable, and human reviewers remain in control at every critical step.
+                  </p>
+                </div>
+                <div className="flex-1 space-y-3">
+                  {TRUST_ITEMS.map((item, i) => (
+                    <div key={i} className="flex items-start gap-3 text-sm text-slate-300">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </FadeUpInView>
+        </div>
+      </section>
+
+      {/* ── CTA ───────────────────────────────────────────────────────── */}
+      <section className="py-24 px-6 border-t border-white/[0.06]">
+        <div className="max-w-2xl mx-auto text-center">
+          <FadeUpInView>
+            <h2 className="text-3xl font-bold mb-4">Ready to review smarter?</h2>
+            <p className="text-slate-400 text-sm mb-8">
+              Sign in with your Google account to start processing contracts in minutes.
+            </p>
+            <button
+              onClick={handleMainAction}
+              className="group inline-flex items-center gap-2 px-8 py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg transition-colors duration-150"
+            >
+              {user ? "Back to Dashboard" : "Start for free"}
+              <ArrowRight className="w-4 h-4 transition-transform duration-150 group-hover:translate-x-0.5" />
+            </button>
+          </FadeUpInView>
+        </div>
+      </section>
+
+      {/* ── Footer ────────────────────────────────────────────────────── */}
+      <footer className="border-t border-white/[0.06] py-8 px-6">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            ContractIQ — AI Contract Intelligence
+          </div>
+          <span>Built with Google ADK · Gemini Pro · Firebase · Next.js</span>
+        </div>
+      </footer>
+    </div>
   );
 }

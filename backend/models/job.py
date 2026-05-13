@@ -36,8 +36,8 @@ class ContractStatus(str, Enum):
 
 
 class JobCreateRequest(BaseModel):
-    upload_id: str
-    playbook_id: str
+    upload_ids: List[str]
+    playbook_id: Optional[str] = None
     reviewer_email: str
     sla_hours: int = 24
     generate_redlines: bool = True

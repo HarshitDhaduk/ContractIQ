@@ -3,6 +3,8 @@ import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
+from api.db import get_db
 from tools.gcs_tools import gcs_upload
 from api.deps import get_optional_user
 from config import settings
@@ -11,10 +13,7 @@ router = APIRouter()
 
 
 def _db():
-    return firestore.AsyncClient(
-        project=settings.GCP_PROJECT,
-        database=settings.FIRESTORE_DATABASE,
-    )
+    return get_db()
 
 
 @router.post("/upload")
@@ -64,3 +63,17 @@ async def upload_contracts(
         "gcs_uris": gcs_uris,
         "files": file_meta,
     }
+
+
+@router.get("/uploads")
+async def list_uploads(user: dict = Depends(get_optional_user)):
+    """List all previous uploads for the current user, newest first."""
+    db = _db()
+    docs = (
+        db.collection("uploads")
+        .where(filter=FieldFilter("user_id", "==", user["uid"]))
+        .order_by("created_at", direction=firestore.Query.DESCENDING)
+        .limit(20)
+        .stream()
+    )
+    return {"uploads": [d.to_dict() async for d in docs]}

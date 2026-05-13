@@ -1,6 +1,7 @@
 from google.adk.agents import Agent
 from google.adk.tools import FunctionTool
 from tools.playbook_tools import load_precedents
+from tools.notification_tools import save_redlines
 from config import settings
 
 REDLINE_INSTRUCTION = """
@@ -35,6 +36,8 @@ Output: JSON array of RedlineSet objects:
   }
 ]
 
+3. After generating redlines for EACH contract, call save_redlines(job_id, contract_id, redlines) to persist the proposed changes.
+
 Return ONLY valid JSON. No explanation outside the JSON array.
 """
 
@@ -44,9 +47,9 @@ redline_agent = Agent(
     model=settings.GEMINI_MODEL_PRO,
     description="Generates clause rewrites for HIGH/MEDIUM risk clauses using firm precedent style.",
     instruction=REDLINE_INSTRUCTION,
-    tools=[FunctionTool(load_precedents)],
+    tools=[
+        FunctionTool(load_precedents),
+        FunctionTool(save_redlines),
+    ],
     output_key="redline_sets",
-    generate_content_config={
-        "response_mime_type": "application/json",
-    },
 )

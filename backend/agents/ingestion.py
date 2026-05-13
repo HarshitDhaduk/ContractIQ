@@ -1,6 +1,6 @@
 from google.adk.agents import Agent
 from google.adk.tools import FunctionTool
-from tools.notification_tools import update_job_status
+from tools.notification_tools import update_job_status, create_contract_records
 from config import settings
 
 INGESTION_INSTRUCTION = """
@@ -11,10 +11,14 @@ You will receive a session state containing:
 - document_uris: list of gs:// URIs to contract files in Cloud Storage
 - playbook_id: the playbook to use for this review
 
+CRITICAL STARTING STEP:
+1. Immediately call update_job_status(job_id, "INGESTING") so the user knows the process has started.
+
 For EACH document URI:
 1. Call register_document(gcs_uri) to upload it to Gemini Files API and get a file_uri
 2. Extract basic metadata: party names (look for "between X and Y"), contract type, effective date
 3. Estimate page count
+4. After processing ALL documents, call create_contract_records(job_id, document_manifest) to save the records to the database.
 
 Return a JSON object as the document_manifest with this structure:
 {
@@ -60,7 +64,7 @@ def register_document(gcs_uri: str) -> dict:
 
     try:
         upload_response = client.files.upload(
-            path=tmp_path,
+            file=tmp_path,
             config={"mime_type": mime_type, "display_name": filename},
         )
         return {
@@ -80,6 +84,7 @@ ingestion_agent = Agent(
     tools=[
         FunctionTool(register_document),
         FunctionTool(update_job_status),
+        FunctionTool(create_contract_records),
     ],
     output_key="document_manifest",
 )

@@ -71,10 +71,10 @@ def list_playbooks() -> list[dict]:
         path = PLAYBOOKS_DIR / filename
         if path.exists():
             data = json.loads(path.read_text())
-            result.append({"id": pb_id, "name": data.get("name"), "builtin": True})
+            result.append({"playbook_id": pb_id, "name": data.get("name"), "builtin": True})
 
     db = _db()
     for doc in db.collection("playbooks").stream():
-        result.append({"id": doc.id, "name": doc.to_dict().get("name"), "builtin": False})
+        result.append({"playbook_id": doc.id, "name": doc.to_dict().get("name"), "builtin": False})
 
     return result

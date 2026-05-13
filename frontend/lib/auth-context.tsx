@@ -1,28 +1,23 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import {
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut,
-  User,
-} from "firebase/auth";
+import { onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
 import { auth, googleProvider } from "@/lib/firebase";
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
+  idToken: string | null;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
-  idToken: string | null;
 }
 
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   loading: true,
+  idToken: null,
   signInWithGoogle: async () => {},
   logout: async () => {},
-  idToken: null,
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -36,6 +31,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (u) {
         const token = await u.getIdToken();
         setIdToken(token);
+        
+        // Sync user profile to Firestore
+        try {
+          const { api } = await import("@/lib/api");
+          await api.syncUser({
+            display_name: u.displayName,
+            photo_url: u.photoURL,
+            email: u.email || "",
+          }, token);
+          console.log("[Auth] User profile synced to Firestore");
+        } catch (err) {
+          console.error("[Auth] Failed to sync user profile:", err);
+        }
       } else {
         setIdToken(null);
       }
@@ -45,7 +53,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithGoogle = async () => {
-    await signInWithPopup(auth, googleProvider);
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err: unknown) {
+      const error = err as { code?: string; message?: string };
+      if (error.code === "auth/unauthorized-domain") {
+        console.error(
+          "[ContractIQ] Firebase Auth: Unauthorized domain.\n" +
+          "Go to Firebase Console → Authentication → Settings → Authorized Domains\n" +
+          "and add your current domain (e.g. localhost)."
+        );
+      } else {
+        console.error("[ContractIQ] Sign-in error:", error.message);
+      }
+    }
   };
 
   const logout = async () => {
@@ -53,7 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, logout, idToken }}>
+    <AuthContext.Provider value={{ user, loading, idToken, signInWithGoogle, logout }}>
       {children}
     </AuthContext.Provider>
   );

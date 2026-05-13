@@ -1,33 +1,38 @@
 "use client";
+
 import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
-import { useAuth } from "@/lib/auth-context";
-import { uploadContracts, createJob, listPlaybooks } from "@/lib/api";
-import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
-import { Upload, FileText, X, CheckCircle, Loader2, AlertCircle } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { Upload, X, FileText, Loader2, CheckCircle2 } from "lucide-react";
 
-type Stage = "select" | "uploading" | "configuring" | "submitting" | "done" | "error";
+import { useToast } from "@/components/toast";
+import { Skeleton } from "@/components/Skeleton";
 
 export default function UploadPage() {
-  const { idToken } = useAuth();
+  const { idToken, user } = useAuth();
   const router = useRouter();
+  const { toast } = useToast();
   const [files, setFiles] = useState<File[]>([]);
-  const [stage, setStage] = useState<Stage>("select");
-  const [uploadId, setUploadId] = useState("");
-  const [playbookId, setPlaybookId] = useState("nda_standard_2026");
-  const [reviewerEmail, setReviewerEmail] = useState("");
-  const [slackUrl, setSlackUrl] = useState("");
-  const [jobId, setJobId] = useState("");
-  const [error, setError] = useState("");
+  const [playbookId, setPlaybookId] = useState("");
+  const [selectedUploadIds, setSelectedUploadIds] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
 
-  const { data: pbData } = useQuery({
-    queryKey: ["playbooks"],
-    queryFn: () => listPlaybooks(idToken),
+  const { data: rawPlaybooks = [], isLoading: isLoadingPlaybooks } = useQuery({
+    queryKey: ["playbooks", !!idToken],
+    queryFn: () => api.listPlaybooks(idToken),
     enabled: !!idToken,
   });
-  const playbooks: any[] = pbData?.playbooks ?? [];
+  const playbooks = Array.isArray(rawPlaybooks) ? rawPlaybooks : (rawPlaybooks as any).playbooks || [];
+
+  const { data: rawUploads = [], isLoading: isLoadingUploads } = useQuery({
+    queryKey: ["uploads", !!idToken],
+    queryFn: () => api.listUploads(idToken),
+    enabled: !!idToken,
+  });
+  const pastUploads = Array.isArray(rawUploads) ? rawUploads : (rawUploads as any).uploads || [];
 
   const onDrop = useCallback((accepted: File[]) => {
     setFiles((prev) => [...prev, ...accepted].slice(0, 100));
@@ -40,173 +45,178 @@ export default function UploadPage() {
   });
 
   const removeFile = (i: number) => setFiles((prev) => prev.filter((_, idx) => idx !== i));
-
-  const handleUpload = async () => {
-    if (!files.length) return;
-    setStage("uploading");
-    setError("");
-    try {
-      const result = await uploadContracts(files, idToken);
-      setUploadId(result.upload_id);
-      setStage("configuring");
-    } catch (e: any) {
-      setError(e.message);
-      setStage("error");
-    }
+  
+  const toggleUploadSelection = (id: string) => {
+    if (!id) return;
+    setSelectedUploadIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
   };
 
   const handleSubmit = async () => {
-    setStage("submitting");
+    if (files.length === 0 && selectedUploadIds.length === 0) return;
+    setUploading(true);
     try {
-      const result = await createJob({
-        upload_id: uploadId,
-        playbook_id: playbookId,
-        reviewer_email: reviewerEmail,
-        slack_webhook_url: slackUrl,
+      let idsToSend = [...selectedUploadIds];
+
+      if (files.length > 0) {
+        toast("Step 1/3: Uploading documents to secure vault...", "loading");
+        const { upload_id } = await api.uploadFiles(files, idToken);
+        idsToSend.push(upload_id);
+      }
+
+      toast("Step 2/3: Registering batch review job...", "loading");
+      const job = await api.createJob({
+        upload_ids: idsToSend,
+        playbook_id: playbookId || undefined,
+        reviewer_email: user?.email || "reviewer@example.com",
       }, idToken);
-      setJobId(result.job_id);
-      setStage("done");
-    } catch (e: any) {
-      setError(e.message);
-      setStage("error");
+      
+      toast("Step 3/3: Booting multi-agent analysis swarm...", "loading");
+      // Small artificial delay to let the user see the step before redirect
+      await new Promise(r => setTimeout(r, 800));
+      
+      toast("Pipeline started! Tracking real-time progress...", "success");
+      router.push(`/dashboard/jobs/${job.job_id}`);
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : "Upload failed", "error");
+      setUploading(false);
     }
   };
 
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="max-w-2xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white">Upload Contracts</h1>
-        <p className="text-slate-400 mt-1">Upload up to 100 PDF or DOCX files for batch AI review.</p>
+        <h1 className="text-2xl font-bold text-white mb-1">Upload Contracts</h1>
+        <p className="text-slate-400 text-sm">Combine multiple batches for a single AI review job.</p>
       </div>
 
-      <AnimatePresence mode="wait">
-        {(stage === "select" || stage === "uploading") && (
-          <motion.div key="select" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            {/* Drop zone */}
-            <div
-              {...getRootProps()}
-              className={`border-2 border-dashed rounded-2xl p-12 flex flex-col items-center cursor-pointer transition-all ${
-                isDragActive ? "border-indigo-500 bg-indigo-500/10" : "border-white/15 hover:border-white/30 bg-white/2"
-              }`}
-            >
-              <input {...getInputProps()} />
-              <Upload className={`w-12 h-12 mb-4 ${isDragActive ? "text-indigo-400" : "text-slate-500"}`} />
-              <p className="text-white font-semibold mb-1">{isDragActive ? "Drop files here" : "Drag & drop contracts"}</p>
-              <p className="text-sm text-slate-400">PDF or DOCX · up to 100 files</p>
-            </div>
+      {/* Drop zone */}
+      <div
+        {...getRootProps()}
+        className={`relative rounded-xl border-2 border-dashed p-10 text-center cursor-pointer transition-all duration-150 mb-6 ${
+          isDragActive
+            ? "border-blue-500/60 bg-blue-500/5"
+            : "border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]"
+        }`}
+      >
+        <input {...getInputProps()} />
+        <div className="flex flex-col items-center gap-3">
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${isDragActive ? "bg-blue-500/20" : "bg-white/5"}`}>
+            <Upload className={`w-5 h-5 ${isDragActive ? "text-blue-400" : "text-slate-400"}`} />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-slate-200 mb-1">
+              {isDragActive ? "Drop files here" : "Drag & drop new files"}
+            </p>
+            <p className="text-xs text-slate-500">PDF or DOCX · click to browse</p>
+          </div>
+        </div>
+      </div>
 
-            {/* File list */}
-            {files.length > 0 && (
-              <div className="mt-4 space-y-2 max-h-60 overflow-y-auto">
+      {/* Selected Items Summary */}
+      {(files.length > 0 || selectedUploadIds.length > 0) && (
+        <div className="mb-6 space-y-4">
+          {/* New files */}
+          {files.length > 0 && (
+            <div className="rounded-xl border border-blue-500/20 bg-blue-500/[0.03] overflow-hidden">
+              <div className="px-4 py-2 border-b border-blue-500/10 flex items-center justify-between">
+                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">New Upload Batch</span>
+                <button onClick={() => setFiles([])} className="text-[10px] text-slate-500 hover:text-slate-300 uppercase font-bold">Clear</button>
+              </div>
+              <div className="max-h-32 overflow-y-auto divide-y divide-white/[0.04]">
                 {files.map((f, i) => (
-                  <div key={i} className="glass flex items-center gap-3 p-3">
-                    <FileText className="w-4 h-4 text-indigo-400 shrink-0" />
-                    <span className="flex-1 text-sm text-slate-300 truncate">{f.name}</span>
-                    <span className="text-xs text-slate-500">{(f.size / 1024).toFixed(0)} KB</span>
-                    <button onClick={() => removeFile(i)} className="text-slate-500 hover:text-red-400 transition-colors">
-                      <X className="w-4 h-4" />
-                    </button>
+                  <div key={i} className="flex items-center gap-3 px-4 py-2">
+                    <FileText className="w-3 h-3 text-slate-500 shrink-0" />
+                    <span className="text-[11px] text-slate-300 flex-1 truncate">{f.name}</span>
+                    <button onClick={() => removeFile(i)} className="text-slate-600 hover:text-slate-400"><X className="w-3 h-3" /></button>
                   </div>
                 ))}
               </div>
-            )}
+            </div>
+          )}
 
-            {files.length > 0 && (
-              <button
-                onClick={handleUpload}
-                disabled={stage === "uploading"}
-                className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold transition-all"
-              >
-                {stage === "uploading" ? <><Loader2 className="w-4 h-4 animate-spin" /> Uploading {files.length} files…</> : `Upload ${files.length} contracts`}
-              </button>
-            )}
-          </motion.div>
-        )}
+          {/* Selected previous uploads */}
+          {selectedUploadIds.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Selected Previous Batches</p>
+              <div className="flex flex-wrap gap-2">
+                {selectedUploadIds.map(id => {
+                  const u = pastUploads.find(up => up.upload_id === id);
+                  const name = u?.files?.[0]?.filename || id;
+                  return (
+                    <div key={id} className="flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-lg bg-white/5 border border-white/10">
+                      <span className="text-[11px] text-slate-300 font-medium">{name}</span>
+                      <button onClick={() => toggleUploadSelection(id)} className="p-0.5 rounded hover:bg-white/10 text-slate-500 hover:text-slate-300">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
-        {stage === "configuring" && (
-          <motion.div key="config" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass p-6 space-y-5">
-            <div className="flex items-center gap-2 text-emerald-400 text-sm font-semibold mb-2">
-              <CheckCircle className="w-4 h-4" />
-              {files.length} files uploaded successfully
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Playbook</label>
-              <select
-                value={playbookId}
-                onChange={(e) => setPlaybookId(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-indigo-500"
-              >
-                {playbooks.length === 0 && (
-                  <>
-                    <option value="nda_standard_2026">Standard NDA Playbook</option>
-                    <option value="msa_standard_2026">Master Services Agreement</option>
-                    <option value="vendor_compliance_2026">Vendor Compliance</option>
-                  </>
-                )}
-                {playbooks.map((p: any) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Reviewer Email</label>
-              <input
-                type="email"
-                value={reviewerEmail}
-                onChange={(e) => setReviewerEmail(e.target.value)}
-                placeholder="lawyer@firm.com"
-                className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Slack Webhook <span className="text-slate-500 font-normal">(optional)</span></label>
-              <input
-                type="url"
-                value={slackUrl}
-                onChange={(e) => setSlackUrl(e.target.value)}
-                placeholder="https://hooks.slack.com/services/..."
-                className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-              />
-              <p className="text-xs text-slate-500 mt-1">High-risk contracts will ping this channel</p>
-            </div>
-            <button
-              onClick={handleSubmit}
-              className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-all"
+      {/* Batch Selectors Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+        {/* Recent Uploads Dropdown */}
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 px-1">Add Previous Batch</label>
+          {isLoadingUploads ? (
+             <Skeleton className="w-full h-10 rounded-lg" />
+          ) : (
+            <select
+              value=""
+              onChange={(e) => toggleUploadSelection(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500/50"
             >
-              Start AI Review
-            </button>
-          </motion.div>
-        )}
+              <option value="">-- Choose batch --</option>
+              {pastUploads.filter(u => !selectedUploadIds.includes(u.upload_id)).map((u) => {
+                const filenames = u.files?.map(f => f.filename).join(", ") || "Unknown";
+                const label = filenames.length > 30 ? filenames.slice(0, 30) + "..." : filenames;
+                return (
+                  <option key={u.upload_id} value={u.upload_id}>
+                    {label} ({new Date(u.created_at).toLocaleDateString()})
+                  </option>
+                );
+              })}
+            </select>
+          )}
+        </div>
 
-        {stage === "submitting" && (
-          <motion.div key="submitting" className="glass p-12 flex flex-col items-center gap-4">
-            <Loader2 className="w-10 h-10 text-indigo-400 animate-spin" />
-            <p className="text-white font-semibold">Kicking off the pipeline…</p>
-          </motion.div>
-        )}
+        {/* Playbook selector */}
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 px-1">Playbook (optional)</label>
+          {isLoadingPlaybooks ? (
+            <Skeleton className="w-full h-10 rounded-lg" />
+          ) : (
+            <select
+              value={playbookId}
+              onChange={(e) => setPlaybookId(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500/50"
+            >
+              <option value="">No playbook (Default)</option>
+              {playbooks.map((p) => (
+                <option key={p.playbook_id} value={p.playbook_id}>{p.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
 
-        {stage === "done" && (
-          <motion.div key="done" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="glass p-12 flex flex-col items-center gap-4 text-center">
-            <CheckCircle className="w-12 h-12 text-emerald-400" />
-            <h2 className="text-xl font-bold text-white">Job Created!</h2>
-            <p className="text-slate-400 text-sm">Job ID: <code className="text-indigo-300">{jobId}</code></p>
-            <button onClick={() => router.push(`/dashboard/jobs/${jobId}`)} className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm transition-all">
-              Track Progress →
-            </button>
-          </motion.div>
+      <button
+        onClick={handleSubmit}
+        disabled={(files.length === 0 && selectedUploadIds.length === 0) || uploading}
+        className="w-full flex items-center justify-center gap-2 py-3.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20 active:scale-[0.98]"
+      >
+        {uploading ? (
+          <><Loader2 className="w-4 h-4 animate-spin" /> Starting Batch Review…</>
+        ) : (
+          <><CheckCircle2 className="w-4 h-4" /> Start Review</>
         )}
-
-        {stage === "error" && (
-          <motion.div key="error" className="glass p-8 flex flex-col items-center gap-3 text-center">
-            <AlertCircle className="w-10 h-10 text-red-400" />
-            <p className="text-white font-semibold">Something went wrong</p>
-            <p className="text-sm text-red-300">{error}</p>
-            <button onClick={() => { setStage("select"); setError(""); }} className="px-5 py-2 rounded-xl glass glass-hover text-sm text-slate-300">
-              Try Again
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </button>
     </div>
   );
 }

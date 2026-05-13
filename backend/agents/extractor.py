@@ -54,7 +54,4 @@ extractor_agent = Agent(
         FunctionTool(load_precedents),
     ],
     output_key="clause_bundles",
-    generate_content_config={
-        "response_mime_type": "application/json",
-    },
 )

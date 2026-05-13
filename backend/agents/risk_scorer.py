@@ -1,6 +1,7 @@
 from google.adk.agents import Agent
 from google.adk.tools import FunctionTool
 from tools.playbook_tools import get_risk_thresholds
+from tools.notification_tools import save_risk_report
 from models.contract import RiskReport
 from config import settings
 
@@ -26,6 +27,7 @@ For EACH ClauseBundle:
    - critical_flags: list of clause_types with HIGH risk
    - executive_summary: 3-sentence plain English summary for non-lawyers
    - recommended_action: APPROVE (score≤30) | NEGOTIATE (30–70) | REJECT (>70)
+3. After scoring EACH RiskReport, call save_risk_report(job_id, contract_id, report) to persist the results.
 
 Output: a JSON array of RiskReport objects, one per contract. No explanation outside JSON.
 """
@@ -36,9 +38,9 @@ risk_scorer_agent = Agent(
     model=settings.GEMINI_MODEL_PRO,
     description="Scores each contract clause against playbook thresholds, produces RiskReports.",
     instruction=RISK_INSTRUCTION,
-    tools=[FunctionTool(get_risk_thresholds)],
+    tools=[
+        FunctionTool(get_risk_thresholds),
+        FunctionTool(save_risk_report),
+    ],
     output_key="risk_reports",
-    generate_content_config={
-        "response_mime_type": "application/json",
-    },
 )

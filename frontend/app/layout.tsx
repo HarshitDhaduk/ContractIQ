@@ -7,19 +7,24 @@ export const metadata: Metadata = {
   title: "ContractIQ — AI Contract Intelligence",
   description:
     "Multi-agent AI platform for batch contract review, risk scoring, and redline generation powered by Google ADK and Gemini.",
-  keywords: ["contract review", "AI legal", "risk scoring", "Google ADK", "Gemini"],
 };
+
+import { ToastProvider } from "@/components/toast";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
-      <body className="min-h-screen bg-[rgb(10,10,15)] text-slate-100 antialiased">
+      <body>
         <AuthProvider>
-          <QueryProvider>{children}</QueryProvider>
+          <QueryProvider>
+            <ToastProvider>
+              {children}
+            </ToastProvider>
+          </QueryProvider>
         </AuthProvider>
       </body>
     </html>
