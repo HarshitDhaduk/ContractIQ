@@ -155,13 +155,13 @@ PDF Batch Upload (Firebase Storage / GCS)
 Create `backend/.env` from `backend/.env.example`:
 
 ```env
-GCP_PROJECT=contractiq-by-harshit
-GEMINI_API_KEY=<from aistudio.google.com>
+GCP_PROJECT=your-project-id
+GEMINI_API_KEY=<your-api-key>
 GEMINI_MODEL_PRO=gemini-3.1-pro-preview
 GEMINI_MODEL_FLASH=gemini-3-flash-preview
-FIRESTORE_DATABASE=ai-studio-21482af3-d77d-425a-a006-d24d5f98f2ec
-GCS_RAW_BUCKET=contractiq-by-harshit.firebasestorage.app
-GCS_EXPORT_BUCKET=contractiq-by-harshit.firebasestorage.app
+FIRESTORE_DATABASE=(default)
+GCS_RAW_BUCKET=your-project-id.firebasestorage.app
+GCS_EXPORT_BUCKET=your-project-id.firebasestorage.app
 HITL_SLA_HOURS=24
 AUTO_APPROVE_THRESHOLD=30
 SLACK_WEBHOOK_URL=          # optional

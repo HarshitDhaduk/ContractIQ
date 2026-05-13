@@ -62,7 +62,7 @@ backend/
 ## Prerequisites
 
 - Python **3.11+**
-- A Google Cloud project (`contractiq-by-harshit`)
+- A Google Cloud project (`your-project-id`)
 - **Gemini API key** from [Google AI Studio](https://aistudio.google.com)
 - Firebase service account JSON (download from Firebase Console)
 - `pip` or a virtual environment manager
@@ -101,13 +101,13 @@ cp .env.example .env          # macOS/Linux
 Edit `.env` with your values:
 
 ```env
-GCP_PROJECT=contractiq-by-harshit
+GCP_PROJECT=your-project-id
 GEMINI_API_KEY=your-key-from-aistudio.google.com
 GEMINI_MODEL_PRO=gemini-3.1-pro-preview
 GEMINI_MODEL_FLASH=gemini-3-flash-preview
-FIRESTORE_DATABASE=ai-studio-21482af3-d77d-425a-a006-d24d5f98f2ec
-GCS_RAW_BUCKET=contractiq-by-harshit.firebasestorage.app
-GCS_EXPORT_BUCKET=contractiq-by-harshit.firebasestorage.app
+FIRESTORE_DATABASE=(default)
+GCS_RAW_BUCKET=your-project-id.firebasestorage.app
+GCS_EXPORT_BUCKET=your-project-id.firebasestorage.app
 FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-service-account.json
 HITL_SLA_HOURS=24
 AUTO_APPROVE_THRESHOLD=30
@@ -259,12 +259,12 @@ docker build -t contractiq-api .
 # Run locally with Docker
 docker run -p 8080:8080 \
   -e GEMINI_API_KEY=your-key \
-  -e GCP_PROJECT=contractiq-by-harshit \
+  -e GCP_PROJECT=your-project-id \
   contractiq-api
 
 # Deploy to Cloud Run
 gcloud run deploy contractiq-api \
-  --image gcr.io/contractiq-by-harshit/contractiq-api:latest \
+  --image gcr.io/your-project-id/contractiq-api:latest \
   --region us-central1 \
   --memory 4Gi \
   --cpu 2 \
