@@ -23,11 +23,19 @@ def gcs_upload(file_bytes: bytes, filename: str, prefix: str = "raw-docs") -> st
 
 
 def gcs_download(gcs_uri: str) -> bytes:
-    """Download bytes from a gs:// URI."""
+    """Download bytes from a gs:// URI (raw bucket only)."""
     path = gcs_uri.replace(f"gs://{settings.GCS_RAW_BUCKET}/", "")
     bucket = _gcs().bucket(settings.GCS_RAW_BUCKET)
     return bucket.blob(path).download_as_bytes()
 
+
+def gcs_download_uri(gcs_uri: str) -> bytes:
+    """Download bytes from any gs:// URI."""
+    parts = gcs_uri.replace("gs://", "").split("/", 1)
+    bucket_name = parts[0]
+    blob_path = parts[1]
+    bucket = _gcs().bucket(bucket_name)
+    return bucket.blob(blob_path).download_as_bytes()
 
 def gcs_upload_export(file_bytes: bytes, filename: str, contract_id: str) -> str:
     """Upload an export artefact to the exports prefix. Returns gs:// URI."""
@@ -41,8 +49,11 @@ def gcs_upload_export(file_bytes: bytes, filename: str, contract_id: str) -> str
 def gcs_signed_url(gcs_uri: str, expiry_minutes: int = 60) -> str:
     """Generate a signed download URL (valid for expiry_minutes)."""
     import datetime
-    bucket_name = settings.GCS_EXPORT_BUCKET
-    path = gcs_uri.replace(f"gs://{bucket_name}/", "")
+    # Extract bucket and path from gs://bucket/path
+    parts = gcs_uri.replace("gs://", "").split("/", 1)
+    bucket_name = parts[0]
+    path = parts[1]
+    
     blob = _gcs().bucket(bucket_name).blob(path)
     return blob.generate_signed_url(
         expiration=datetime.timedelta(minutes=expiry_minutes),

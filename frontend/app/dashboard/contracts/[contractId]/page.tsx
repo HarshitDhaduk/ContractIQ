@@ -1,292 +1,419 @@
 "use client";
 
-import { use, useState, useRef } from "react";
+import { use, useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, type ClauseRisk } from "@/lib/api";
-import { RiskBadge } from "@/components/RiskBadge";
+import { api, type ClauseRisk, type ExtractedClause, type Redline } from "@/lib/api";
 import { useToast } from "@/components/toast";
-import { ArrowLeft, ChevronRight, AlertTriangle, CheckCircle2, Loader2, X } from "lucide-react";
-import { Loader } from "@/components/Loader";
+import { ArrowLeft, Loader2, X, BookOpen, Zap } from "lucide-react";
 import { ContractSkeleton } from "@/components/Skeleton";
+import { DocViewer } from "@/components/DocViewer";
 
 interface Props { params: Promise<{ contractId: string }> }
 
-function RiskCell({ clause, onClick, selected }: { clause: ClauseRisk; onClick: () => void; selected: boolean }) {
-  const level = clause.risk_level || (clause.risk_score >= 70 ? "HIGH" : clause.risk_score >= 40 ? "MEDIUM" : "LOW");
-  const colors = {
-    HIGH:   "bg-red-900/40 border-red-500/40 text-red-300 hover:bg-red-900/60 shadow-[0_0_15px_-5px_rgba(239,68,68,0.3)]",
-    MEDIUM: "bg-amber-900/30 border-amber-500/30 text-amber-300 hover:bg-amber-900/50 shadow-[0_0_15px_-5px_rgba(245,158,11,0.2)]",
-    LOW:    "bg-emerald-900/20 border-emerald-500/20 text-emerald-400 hover:bg-emerald-900/40",
-  } as const;
-  
+interface AnnotatedClause {
+  clause_type: string;
+  original_text: string;
+  page_ref: number[];
+  is_standard: boolean;
+  deviation_summary: string | null;
+  risk_score: number;
+  risk_level: "HIGH" | "MEDIUM" | "LOW";
+  risk_category?: string;
+  explanation: string;
+  recommended_action: string;
+  redline?: Redline;
+}
+
+function merge(clauses: ExtractedClause[], risks: ClauseRisk[], redlines: Redline[]): AnnotatedClause[] {
+  return risks.map((r) => {
+    const c = clauses.find((x) => x.clause_type === r.clause_type);
+    const rl = redlines.find((x) => x.clause_type === r.clause_type);
+    return {
+      clause_type: r.clause_type,
+      original_text: c?.original_text || rl?.original_text || "",
+      page_ref: c?.page_ref || [],
+      is_standard: c?.is_standard ?? true,
+      deviation_summary: c?.deviation_summary || null,
+      risk_score: r.risk_score ?? 0,
+      risk_level: r.risk_level ?? (r.risk_score >= 70 ? "HIGH" : r.risk_score >= 40 ? "MEDIUM" : "LOW"),
+      risk_category: r.risk_category,
+      explanation: r.explanation ?? "",
+      recommended_action: r.recommended_action ?? "ACCEPT",
+      redline: rl,
+    };
+  });
+}
+
+/* ── Score Tile ──────────────────────────────────────────────────────── */
+const TILE_COLORS = {
+  HIGH:   "bg-red-500/20 border-red-500/30 hover:bg-red-500/30 hover:border-red-500/50",
+  MEDIUM: "bg-amber-500/15 border-amber-500/25 hover:bg-amber-500/25 hover:border-amber-500/40",
+  LOW:    "bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/20 hover:border-emerald-500/35",
+};
+const TILE_TEXT = {
+  HIGH:   "text-red-300",
+  MEDIUM: "text-amber-300",
+  LOW:    "text-emerald-300",
+};
+const TILE_SCORE = {
+  HIGH:   "text-red-100",
+  MEDIUM: "text-amber-100",
+  LOW:    "text-emerald-100",
+};
+
+function ScoreTile({ clause, selected, onClick }: { clause: AnnotatedClause; selected: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className={`p-2.5 rounded-lg border text-left transition-all duration-200 group relative overflow-hidden ${colors[level]} ${
-        selected ? "ring-2 ring-white/50 scale-[1.02]" : "hover:scale-[1.02]"
+      className={`p-3 rounded-lg border text-left transition-all duration-200 min-w-[140px] ${TILE_COLORS[clause.risk_level]} ${
+        selected ? "ring-2 ring-white/40 scale-[1.03] shadow-lg" : ""
       }`}
     >
-      <div className="text-[9px] font-bold uppercase tracking-widest mb-1 leading-tight opacity-70 group-hover:opacity-100 transition-opacity">
+      <p className={`text-[10px] font-bold uppercase tracking-wider leading-tight mb-1 ${TILE_TEXT[clause.risk_level]}`}>
         {clause.clause_type.replace(/_/g, " ")}
-      </div>
-      <div className="text-xl font-black leading-none flex items-baseline gap-0.5">
-        {clause.risk_score}
-        <span className="text-[10px] font-bold opacity-40">/100</span>
+      </p>
+      <div className="flex items-baseline gap-1">
+        <span className={`text-2xl font-black leading-none ${TILE_SCORE[clause.risk_level]}`}>{clause.risk_score}</span>
+        <span className={`text-[10px] font-bold opacity-40 ${TILE_TEXT[clause.risk_level]}`}>/100</span>
       </div>
     </button>
   );
 }
 
+/* ── Main Page ───────────────────────────────────────────────────────── */
 export default function ContractReviewPage({ params }: Props) {
   const { contractId } = use(params);
   const { idToken } = useAuth();
   const qc = useQueryClient();
-  const detailRef = useRef<HTMLDivElement>(null);
-  const [selected, setSelected] = useState<ClauseRisk | null>(null);
+  const { toast } = useToast();
+  const [selected, setSelected] = useState<AnnotatedClause | null>(null);
   const [decisionNote, setDecisionNote] = useState("");
+  const [viewTab, setViewTab] = useState<"analysis" | "original" | "source">("analysis");
+  const detailRef = useRef<HTMLDivElement>(null);
 
-  const handleSelectClause = (clause: ClauseRisk) => {
-    setSelected(clause);
-    // Smooth scroll to detail section, centering it in view
-    setTimeout(() => {
-      detailRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 100);
-  };
+  // Auto-scroll to detail panel when a clause is selected
+  useEffect(() => {
+    if (selected && detailRef.current) {
+      setTimeout(() => {
+        detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    }
+  }, [selected]);
 
   const { data: contract } = useQuery({
     queryKey: ["contract-detail", contractId],
     queryFn: () => api.getContractDetails(contractId, idToken),
   });
-
   const { data: risk, isLoading: riskLoading } = useQuery({
     queryKey: ["contract-risk", contractId],
     queryFn: () => api.getContractRisk(contractId, idToken),
   });
-
-  const { data: redlines = [] } = useQuery({
+  const { data: clauseBundle } = useQuery({
+    queryKey: ["contract-clauses", contractId],
+    queryFn: () => api.getContractClauses(contractId, idToken),
+  });
+  const { data: redlineData } = useQuery({
     queryKey: ["contract-redlines", contractId],
     queryFn: () => api.getContractRedlines(contractId, idToken),
   });
+  const { data: job } = useQuery({
+    queryKey: ["job-for-contract", contract?.job_id],
+    queryFn: () => api.getJob(contract!.job_id!, idToken),
+    enabled: !!contract?.job_id,
+  });
+  const { data: playbook } = useQuery({
+    queryKey: ["playbook", job?.playbook_id],
+    queryFn: () => api.getPlaybook(job!.playbook_id!, idToken),
+    enabled: !!job?.playbook_id,
+  });
 
-  const { toast } = useToast();
+  const redlines = redlineData ?? [];
 
   const mutation = useMutation({
     mutationFn: (action: "APPROVE" | "OVERRIDE" | "ESCALATE") =>
-      api.reviewContract(contractId, { action, notes: decisionNote }, idToken),
+      api.reviewContract(contractId, { action, notes: decisionNote, job_id: contract?.job_id }, idToken),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["contract-risk", contractId] });
       toast("Review decision submitted!", "success");
     },
-    onError: (e: unknown) => {
-      toast(e instanceof Error ? e.message : "Failed to submit decision", "error");
-    }
+    onError: (e: unknown) => toast(e instanceof Error ? e.message : "Failed", "error"),
   });
-
-  const selectedRedline = redlines.find((r) => r.clause_type === selected?.clause_type);
-
-  const getLevel = (score: number) => score >= 70 ? "HIGH" : score >= 40 ? "MEDIUM" : "LOW";
-
-  const highClauses = risk?.clause_risks?.filter((c: any) => (c.risk_level || getLevel(c.risk_score)) === "HIGH") ?? [];
-  const medClauses  = risk?.clause_risks?.filter((c: any) => (c.risk_level || getLevel(c.risk_score)) === "MEDIUM") ?? [];
-  const lowClauses  = risk?.clause_risks?.filter((c: any) => (c.risk_level || getLevel(c.risk_score)) === "LOW") ?? [];
 
   if (riskLoading) return <ContractSkeleton />;
   if (!risk) {
     return (
-      <div className="max-w-6xl mx-auto">
-        <div className="flex items-center gap-3 mb-8">
-          <Link href="/dashboard/jobs" className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-all">
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold text-white mb-1">
-              {contract?.filename || "Contract Review"}
-            </h1>
-            <p className="font-mono text-[10px] text-slate-500 uppercase tracking-widest">{contractId}</p>
-          </div>
-        </div>
-        <div className="flex flex-col items-center justify-center py-20 px-4 text-center border border-dashed border-white/10 rounded-2xl bg-white/[0.01]">
-          <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-6">
-            <AlertTriangle className="w-8 h-8 text-slate-500" />
-          </div>
-          <h2 className="text-xl font-bold text-slate-300 mb-2">Analysis Not Ready</h2>
-          <p className="text-slate-500 text-sm max-w-md mb-8">
-            This contract is still being processed by our AI agents. Risk reports and redlines will appear here as soon as the pipeline finishes.
-          </p>
-          <Link href="/dashboard/jobs" className="btn-secondary text-sm">
-            Back to Jobs
-          </Link>
+      <div className="max-w-4xl mx-auto">
+        <div className="flex flex-col items-center justify-center py-20 text-center border border-dashed border-white/10 rounded-2xl bg-white/[0.01]">
+          <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-4" />
+          <h2 className="text-lg font-bold text-slate-300 mb-2">Analyzing Document...</h2>
+          <p className="text-slate-500 text-sm max-w-md mb-6">AI agents are extracting clauses and scoring risks.</p>
+          <Link href="/dashboard/jobs" className="btn-secondary text-sm">Back to Jobs</Link>
         </div>
       </div>
     );
   }
 
+  const annotated = merge(clauseBundle?.clauses || [], risk.clause_risks || [], redlines);
+  const sorted = [...annotated].sort((a, b) => b.risk_score - a.risk_score);
+  const critical = sorted.filter((c) => c.risk_level === "HIGH" || c.risk_level === "MEDIUM");
+  const acceptable = sorted.filter((c) => c.risk_level === "LOW");
+  const missingClauses = clauseBundle?.missing_clauses || [];
+  const riskColor = risk.contract_risk_score >= 70 ? "text-red-400 bg-red-500/15" :
+    risk.contract_risk_score >= 40 ? "text-amber-400 bg-amber-500/15" : "text-emerald-400 bg-emerald-500/15";
+
+  // Base URL for the proxy
+  const baseUrl = `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/v1"}/contracts/${contractId}/download`;
+
+  const renderDocViewer = (label: string, type: "original" | "redline") => {
+    // Determine the URL and filename
+    const downloadUrl = `${baseUrl}?doc_type=${type}`;
+    // If we request redline, we assume it's a docx.
+    const filename = type === "redline" 
+      ? `${(contract?.filename || "document").split(".")[0]}_redlined.docx` 
+      : contract?.filename || "";
+      
+    // Only show viewer if there's an original gcs_uri available as a baseline
+    const canView = !!contract?.gcs_uri;
+
+    return (
+      <div className="w-full h-full p-4 flex flex-col">
+        <div className="flex-1 rounded-2xl border border-white/10 bg-black/20 overflow-hidden">
+          <DocViewer url={canView ? downloadUrl : null} filename={filename} label={label} />
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="max-w-6xl mx-auto">
-      <div className="flex items-center gap-3 mb-8">
-        <Link href="/dashboard/jobs" className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-all">
-          <ArrowLeft className="w-4 h-4" />
-        </Link>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold text-white mb-0.5">
-            {contract?.filename || "Contract Review"}
-          </h1>
-          <div className="flex items-center gap-2">
-            <p className="font-mono text-[10px] text-slate-500 uppercase tracking-widest">{contractId}</p>
-            {contract?.page_count && (
-              <span className="text-[10px] text-slate-600 border-l border-white/10 pl-2">{contract.page_count} pages</span>
-            )}
+    <div className="h-[calc(100vh-80px)] flex flex-col -m-6">
+      {/* ═══ HEADER ═══ */}
+      <div className="h-14 border-b border-white/[0.08] bg-slate-950/60 backdrop-blur-md px-6 flex items-center justify-between z-20 shrink-0">
+        <div className="flex items-center gap-3">
+          <Link href={contract?.job_id ? `/dashboard/jobs/${contract.job_id}` : "/dashboard/jobs"} className="p-1.5 rounded-lg hover:bg-white/5 text-slate-400">
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+          <div>
+            <h1 className="text-lg font-black text-white leading-none">Contract Review</h1>
+            <p className="text-[9px] text-slate-500 font-mono tracking-widest mt-0.5">{contractId}</p>
           </div>
         </div>
-        {risk && (
-          <RiskBadge
-            level={risk.contract_risk_score >= 70 ? "HIGH" : risk.contract_risk_score >= 40 ? "MEDIUM" : "LOW"}
-            showScore={Math.round(risk.contract_risk_score)}
-            size="md"
-          />
-        )}
+        <div className="flex items-center gap-4">
+          {playbook && (
+            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20">
+              <BookOpen className="w-3 h-3 text-violet-400" />
+              <span className="text-[10px] font-bold text-violet-300">{playbook.name}</span>
+            </div>
+          )}
+          <div className="flex bg-white/5 p-0.5 rounded-lg">
+            {(["original", "analysis", "source"] as const).map((tab) => (
+              <button key={tab} onClick={() => setViewTab(tab)}
+                className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${
+                  viewTab === tab ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300"
+                }`}
+              >{tab === "original" ? "Original Doc" : tab === "analysis" ? "AI Analysis" : "Redlined Doc"}</button>
+            ))}
+          </div>
+          <div className={`px-3 py-1.5 rounded-lg flex items-center gap-2 font-black text-sm ${riskColor}`}>
+            <span className="text-[9px] font-bold uppercase tracking-wider opacity-70">{risk.contract_risk_score >= 70 ? "HIGH" : risk.contract_risk_score >= 40 ? "MED" : "LOW"}</span>
+            {Math.round(risk.contract_risk_score)}
+          </div>
+        </div>
       </div>
 
-      {risk && (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr,380px] gap-6 px-1">
-          {/* Left: Heatmap + Summary */}
-          <div className="space-y-6">
-            {/* Executive Summary */}
-            <div className="p-5 rounded-xl border border-white/[0.07] bg-white/[0.025] shadow-lg shadow-black/20">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Executive Summary</p>
-              <p className="text-sm text-slate-300 leading-relaxed font-medium">{risk.executive_summary}</p>
-              {risk.critical_flags.length > 0 && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {risk.critical_flags.map((flag, i) => (
-                    <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-bold bg-red-500/10 border border-red-500/20 text-red-400 uppercase">
-                      <AlertTriangle className="w-3 h-3" /> {flag.replace(/_/g, " ")}
-                    </span>
-                  ))}
+      {/* ═══ BODY ═══ */}
+      <div className="flex-1 overflow-hidden">
+        {viewTab !== "analysis" ? renderDocViewer(viewTab === "original" ? "Original Document" : "AI Redlined", viewTab === "original" ? "original" : "redline") : (
+          <div className="h-full overflow-y-auto custom-scrollbar">
+            <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
+
+              {/* ── 1. EXECUTIVE SUMMARY ──────────────────────────── */}
+              <div className="p-6 rounded-xl border border-white/[0.06] bg-white/[0.02]">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Executive Summary</p>
+                <p className="text-[13px] text-slate-200 leading-relaxed mb-4">{risk.executive_summary}</p>
+                {risk.critical_flags?.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {risk.critical_flags.map((f, i) => (
+                      <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 text-[10px] font-bold text-red-400 uppercase tracking-wide">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" /></svg>
+                        {f.replace(/_/g, " ")}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {risk.recommended_action && (
+                  <p className={`text-[11px] font-black uppercase tracking-wider ${risk.recommended_action === "REJECT" ? "text-red-400" : risk.recommended_action === "NEGOTIATE" ? "text-amber-400" : "text-emerald-400"}`}>Overall Recommendation: {risk.recommended_action}</p>
+                )}
+              </div>
+
+              {/* ── 2. RISK HEATMAP ───────────────────────────────── */}
+              <div className="p-6 rounded-xl border border-white/[0.06] bg-white/[0.02]">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-5">Risk Heatmap</p>
+                {critical.length > 0 && (
+                  <div className="mb-6">
+                    <p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-3">Critical Vulnerabilities</p>
+                    <div className="flex flex-wrap gap-3">
+                      {critical.map((c) => (<ScoreTile key={c.clause_type} clause={c} selected={selected?.clause_type === c.clause_type} onClick={() => setSelected(selected?.clause_type === c.clause_type ? null : c)} />))}
+                    </div>
+                  </div>
+                )}
+                {acceptable.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-3">Acceptable Terms</p>
+                    <div className="flex flex-wrap gap-3">
+                      {acceptable.map((c) => (<ScoreTile key={c.clause_type} clause={c} selected={selected?.clause_type === c.clause_type} onClick={() => setSelected(selected?.clause_type === c.clause_type ? null : c)} />))}
+                    </div>
+                  </div>
+                )}
+                {missingClauses.length > 0 && (
+                  <div className="mt-6 pt-5 border-t border-white/[0.05]">
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Missing Clauses</p>
+                    <div className="flex flex-wrap gap-2">
+                      {missingClauses.map((c) => (<span key={c} className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-[10px] font-bold text-slate-400 uppercase">{c.replace(/_/g, " ")}</span>))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ═══ EXPANDED DETAIL PANEL ═══ */}
+              {selected && (
+                <div ref={detailRef} className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
+                  {/* Detail Header */}
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06]">
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                        {selected.clause_type.replace(/_/g, " ")}
+                      </h3>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                        selected.risk_level === "HIGH" ? "bg-red-500/20 text-red-400" :
+                        selected.risk_level === "MEDIUM" ? "bg-amber-500/20 text-amber-400" : "bg-emerald-500/20 text-emerald-400"
+                      }`}>
+                        {selected.risk_level} {selected.risk_score}
+                      </span>
+                      {!selected.is_standard && (
+                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase bg-violet-500/15 text-violet-400 border border-violet-500/20">
+                          <Zap className="w-2.5 h-2.5" /> Deviation
+                        </span>
+                      )}
+                    </div>
+                    <button onClick={() => setSelected(null)} className="p-1.5 rounded-lg hover:bg-white/5 text-slate-500">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="px-6 py-5 space-y-5">
+                    {/* Explanation */}
+                    <div className="flex items-start gap-3">
+                      <div className={`w-1 rounded-full self-stretch shrink-0 ${
+                        selected.risk_level === "HIGH" ? "bg-red-500" : selected.risk_level === "MEDIUM" ? "bg-amber-500" : "bg-emerald-500"
+                      }`} />
+                      <p className="text-[13px] text-slate-200 leading-relaxed italic">
+                        &ldquo;{selected.explanation}&rdquo;
+                      </p>
+                    </div>
+
+                    {/* Action */}
+                    <div className={`px-4 py-2.5 rounded-lg font-bold text-[12px] uppercase tracking-wider ${
+                      selected.recommended_action === "BLOCK" || selected.recommended_action === "ESCALATE"
+                        ? "bg-red-500/10 text-red-400 border border-red-500/20"
+                        : selected.recommended_action === "NEGOTIATE"
+                        ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                        : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                    }`}>
+                      Advice: {selected.recommended_action}
+                    </div>
+
+                    {/* Original text */}
+                    {selected.original_text && (
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Original Clause Text</p>
+                        <div className="p-4 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+                          <p className="text-[12px] text-slate-300 leading-relaxed">{selected.original_text}</p>
+                          {selected.page_ref.length > 0 && (
+                            <p className="text-[9px] text-slate-600 font-mono mt-2">Page {selected.page_ref.join(", ")}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Playbook deviation */}
+                    {!selected.is_standard && selected.deviation_summary && (
+                      <div>
+                        <p className="text-[10px] font-bold text-violet-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                          <BookOpen className="w-3 h-3" /> Playbook Deviation
+                        </p>
+                        <div className="p-4 rounded-lg bg-violet-500/[0.04] border border-violet-500/15">
+                          <p className="text-[12px] text-violet-300/80 leading-relaxed">{selected.deviation_summary}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Redline */}
+                    {selected.redline && (
+                      <div>
+                        <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-2">Proposed Redline</p>
+                        <div className="space-y-3">
+                          {selected.redline.original_text && (
+                            <div className="p-4 rounded-lg bg-red-500/[0.05] border border-red-500/15">
+                              <p className="text-[9px] font-bold text-red-400/60 uppercase mb-1.5">Original Text</p>
+                              <p className="text-[12px] text-red-300/70 leading-relaxed italic line-through decoration-red-500/30">
+                                {selected.redline.original_text}
+                              </p>
+                            </div>
+                          )}
+                          <div className="p-4 rounded-lg bg-emerald-500/[0.05] border border-emerald-500/15">
+                            <p className="text-[9px] font-bold text-emerald-400/60 uppercase mb-1.5">
+                              {selected.redline.original_text ? "AI Suggestion" : "New Clause (AI Generated)"}
+                            </p>
+                            <p className="text-[12px] text-emerald-300 leading-relaxed font-medium">{selected.redline.proposed_text}</p>
+                          </div>
+                          <p className="text-[11px] text-slate-500 italic">
+                            <span className="text-blue-400/60 font-bold not-italic uppercase mr-1">Rationale:</span>
+                            {selected.redline.rationale}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
-            </div>
 
-            {/* Risk Heatmap */}
-            <div className="p-5 rounded-xl border border-white/[0.07] bg-white/[0.025] shadow-lg shadow-black/20">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4">Risk Heatmap</p>
-              <div className="space-y-6">
-                {highClauses.length > 0 && (
-                  <div>
-                    <p className="text-[10px] text-red-400 font-bold uppercase tracking-wider mb-3">Critical Vulnerabilities</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
-                      {highClauses.map((c) => (
-                        <RiskCell key={c.clause_type} clause={c} onClick={() => handleSelectClause(c)} selected={selected?.clause_type === c.clause_type} />
-                      ))}
-                    </div>
+              {/* Executive summary already shown at top */}
+
+              {/* ── Decision Panel ────────────────────────────────── */}
+              <div className="p-5 rounded-xl border border-white/[0.08] bg-slate-950/60 backdrop-blur-sm">
+                <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-3">Counsel Review &amp; Disposition</p>
+                <div className="flex items-end gap-3">
+                  <textarea
+                    value={decisionNote}
+                    onChange={(e) => setDecisionNote(e.target.value)}
+                    placeholder="Add review comments, conditions, or rationale..."
+                    rows={1}
+                    className="flex-1 bg-white/[0.04] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-slate-300 placeholder-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500/40 resize-none"
+                  />
+                  <div className="flex gap-2 shrink-0">
+                    <button onClick={() => mutation.mutate("APPROVE")} disabled={mutation.isPending}
+                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold rounded-xl transition-all shadow-lg disabled:opacity-50">
+                      Approve
+                    </button>
+                    <button onClick={() => mutation.mutate("OVERRIDE")} disabled={mutation.isPending}
+                      className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold rounded-xl transition-all shadow-lg disabled:opacity-50">
+                      Negotiate
+                    </button>
+                    <button onClick={() => mutation.mutate("ESCALATE")} disabled={mutation.isPending}
+                      className="px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white text-[11px] font-bold rounded-xl transition-all shadow-lg disabled:opacity-50">
+                      Escalate
+                    </button>
                   </div>
-                )}
-                {medClauses.length > 0 && (
-                  <div>
-                    <p className="text-[10px] text-amber-400 font-bold uppercase tracking-wider mb-3">Negotiable Points</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
-                      {medClauses.map((c) => (
-                        <RiskCell key={c.clause_type} clause={c} onClick={() => handleSelectClause(c)} selected={selected?.clause_type === c.clause_type} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {lowClauses.length > 0 && (
-                  <div>
-                    <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider mb-3">Acceptable Terms</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
-                      {lowClauses.map((c) => (
-                        <RiskCell key={c.clause_type} clause={c} onClick={() => handleSelectClause(c)} selected={selected?.clause_type === c.clause_type} />
-                      ))}
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
+
+              <div className="h-4" />
             </div>
           </div>
-
-          {/* Right: Clause detail + Decision */}
-          <div ref={detailRef} className="space-y-4 scroll-mt-20">
-            {/* Clause detail drawer */}
-            {selected ? (
-              <div className="p-6 rounded-xl border border-white/[0.08] bg-white/[0.03] shadow-xl ring-1 ring-white/5 animate-in fade-in slide-in-from-right-4 duration-300">
-                <div className="flex items-start justify-between mb-5">
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-500 mb-1 tracking-widest">{selected.clause_type.replace(/_/g, " ").toUpperCase()}</p>
-                    <RiskBadge level={selected.risk_level || getLevel(selected.risk_score)} showScore={selected.risk_score} size="md" />
-                  </div>
-                  <button onClick={() => setSelected(null)} className="p-1 rounded-md hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-                <p className="text-xs text-slate-300 mb-4 leading-relaxed italic border-l-2 border-white/10 pl-3">"{selected.explanation}"</p>
-                
-                <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 mb-6 font-medium leading-relaxed">
-                  <span className="font-bold text-amber-400 uppercase tracking-tighter mr-1">Advice:</span> {selected.recommended_action}
-                </div>
-
-                {selectedRedline && (
-                  <div className="space-y-4">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5 pb-2">Proposed Redline</p>
-                    <div className="space-y-3">
-                      <div className="p-3.5 rounded-xl bg-red-500/5 border border-red-500/10 group">
-                        <p className="text-[9px] text-red-500/60 font-bold mb-2 uppercase tracking-tighter">Original Text</p>
-                        <p className="text-[11px] text-slate-400 leading-relaxed font-mono italic">{selectedRedline.original_text || "Clause not present in original document."}</p>
-                      </div>
-                      <div className="flex items-center justify-center">
-                        <div className="h-4 w-px bg-white/10" />
-                      </div>
-                      <div className="p-3.5 rounded-xl bg-emerald-500/5 border border-emerald-500/15">
-                        <p className="text-[9px] text-emerald-400 font-bold mb-2 uppercase tracking-tighter">AI Suggestion</p>
-                        <p className="text-xs text-slate-200 leading-relaxed font-medium">{selectedRedline.proposed_text}</p>
-                      </div>
-                    </div>
-                    <div className="p-3 rounded-lg bg-blue-500/5 text-[10px] text-slate-400 leading-relaxed">
-                      <span className="font-bold text-blue-400/60 uppercase mr-1">Rationale:</span> {selectedRedline.rationale}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="p-10 rounded-xl border border-dashed border-white/10 bg-white/[0.01] text-center">
-                <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-4">
-                  <ChevronRight className="w-5 h-5 text-slate-600" />
-                </div>
-                <p className="text-xs text-slate-500 font-medium">Click a clause in the heatmap to inspect AI insights and redlines.</p>
-              </div>
-            )}
-
-            {/* Decision bar */}
-            <div className="p-6 rounded-xl border border-white/[0.07] bg-white/[0.025] shadow-lg">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4">Final Decision</p>
-              <textarea
-                value={decisionNote}
-                onChange={(e) => setDecisionNote(e.target.value)}
-                placeholder="Add reviewer notes (e.g., 'Escalated to legal', 'Business case approved')..."
-                rows={3}
-                className="w-full bg-white/[0.04] border border-white/10 rounded-xl px-4 py-3 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500/40 transition-all resize-none mb-4 shadow-inner"
-              />
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {([
-                  { action: "APPROVE"  as const, label: "Approve",   color: "bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/10" },
-                  { action: "OVERRIDE" as const, label: "Override",  color: "bg-amber-500 hover:bg-amber-400 text-white shadow-lg shadow-amber-500/10" },
-                  { action: "ESCALATE" as const, label: "Escalate",  color: "bg-red-500 hover:bg-red-400 text-white shadow-lg shadow-red-500/10" },
-                ]).map(({ action, label, color }) => (
-                  <button
-                    key={action}
-                    onClick={() => mutation.mutate(action)}
-                    disabled={mutation.isPending}
-                    className={`py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 disabled:opacity-50 ${color}`}
-                  >
-                    {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

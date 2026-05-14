@@ -3,25 +3,25 @@
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, type Job, isProcessingStatus, isFailedStatus } from "@/lib/api";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Upload, Briefcase, ArrowRight, FileText } from "lucide-react";
 import { CardSkeleton, TableRowSkeleton } from "@/components/Skeleton";
 
 export default function DashboardPage() {
   const { user, idToken } = useAuth();
-  const { data: rawJobs = [], isLoading } = useQuery({
+  const { data: rawJobs, isLoading } = useQuery({
     queryKey: ["jobs"],
     queryFn: () => api.listJobs(idToken),
     refetchInterval: 10000,
   });
 
-  const jobs = Array.isArray(rawJobs) ? rawJobs : (rawJobs as any).jobs || [];
+  const jobs: Job[] = rawJobs?.jobs ?? [];
   const recent = jobs.slice(0, 5);
-  const inProgress = jobs.filter((j) =>
-    ["QUEUED", "INGESTING", "EXTRACTING", "SCORING", "REDLINING", "PENDING_REVIEW"].includes(j.status)
+  const inProgress = jobs.filter((j: Job) =>
+    isProcessingStatus(j.status) || j.status === "PENDING_REVIEW"
   ).length;
-  const completed = jobs.filter((j) => j.status === "COMPLETE").length;
+  const completed = jobs.filter((j: Job) => j.status === "COMPLETE").length;
 
   return (
     <div className="max-w-5xl mx-auto">

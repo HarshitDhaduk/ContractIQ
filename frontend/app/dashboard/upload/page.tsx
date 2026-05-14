@@ -5,7 +5,7 @@ import { useDropzone } from "react-dropzone";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, type UploadRecord, type Playbook } from "@/lib/api";
 import { Upload, X, FileText, Loader2, CheckCircle2 } from "lucide-react";
 
 import { useToast } from "@/components/toast";
@@ -25,14 +25,15 @@ export default function UploadPage() {
     queryFn: () => api.listPlaybooks(idToken),
     enabled: !!idToken,
   });
-  const playbooks = Array.isArray(rawPlaybooks) ? rawPlaybooks : (rawPlaybooks as any).playbooks || [];
+
+  const playbooks: Playbook[] = Array.isArray(rawPlaybooks) ? rawPlaybooks : [];
 
   const { data: rawUploads = [], isLoading: isLoadingUploads } = useQuery({
     queryKey: ["uploads", !!idToken],
     queryFn: () => api.listUploads(idToken),
     enabled: !!idToken,
   });
-  const pastUploads = Array.isArray(rawUploads) ? rawUploads : (rawUploads as any).uploads || [];
+  const pastUploads: UploadRecord[] = Array.isArray(rawUploads) ? rawUploads : [];
 
   const onDrop = useCallback((accepted: File[]) => {
     setFiles((prev) => [...prev, ...accepted].slice(0, 100));

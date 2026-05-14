@@ -98,3 +98,77 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
+
+/* ── DocViewer rendered DOCX styles ── */
+.doc-rendered {
+  color: #e2e8f0;
+  font-size: 14px;
+  line-height: 1.8;
+  letter-spacing: 0.01em;
+}
+.doc-rendered h1, .doc-rendered .doc-h1 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #f8fafc;
+  margin: 2rem 0 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.doc-rendered h2, .doc-rendered .doc-h2 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 1.5rem 0 0.5rem;
+}
+.doc-rendered h3, .doc-rendered .doc-h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin: 1.25rem 0 0.5rem;
+}
+.doc-rendered p {
+  margin: 0.5rem 0;
+}
+.doc-rendered ul, .doc-rendered ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+.doc-rendered ul { list-style-type: disc; }
+.doc-rendered ol { list-style-type: decimal; }
+.doc-rendered li { margin: 0.25rem 0; }
+.doc-rendered table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 13px;
+}
+.doc-rendered th, .doc-rendered td {
+  border: 1px solid rgba(255,255,255,0.08);
+  padding: 8px 12px;
+  text-align: left;
+}
+.doc-rendered th {
+  background: rgba(255,255,255,0.04);
+  font-weight: 700;
+  color: #f1f5f9;
+}
+.doc-rendered tr:nth-child(even) td {
+  background: rgba(255,255,255,0.01);
+}
+.doc-rendered strong, .doc-rendered b { font-weight: 700; color: #f1f5f9; }
+.doc-rendered em, .doc-rendered i { font-style: italic; }
+.doc-rendered u { text-decoration: underline; text-underline-offset: 3px; }
+.doc-rendered a { color: #60a5fa; text-decoration: underline; }
+.doc-rendered blockquote {
+  border-left: 3px solid rgba(99,102,241,0.4);
+  padding: 0.5rem 1rem;
+  margin: 0.75rem 0;
+  background: rgba(99,102,241,0.04);
+  border-radius: 0 8px 8px 0;
+}
+.doc-rendered img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 1rem 0;
+}

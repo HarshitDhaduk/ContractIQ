@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, getCompletedCount, isFailedStatus, isProcessingStatus } from "@/lib/api";
 import { StatusBadge } from "@/components/StatusBadge";
 import { RiskBadge } from "@/components/RiskBadge";
 import { Upload, ChevronRight, Loader2, RotateCcw } from "lucide-react";
@@ -124,11 +124,15 @@ export default function JobsPage() {
                       <div className="flex items-center gap-3">
                         <div className="w-24 h-1.5 bg-white/10 rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-blue-500 rounded-full transition-all duration-700 ease-out"
-                            style={{ width: `${job.contract_count > 0 ? (job.contracts_complete / job.contract_count) * 100 : 0}%` }}
+                            className={`h-full rounded-full transition-all duration-700 ease-out ${
+                              isFailedStatus(job.status) ? 'bg-red-500' :
+                              job.status === 'COMPLETE' ? 'bg-emerald-500' :
+                              isProcessingStatus(job.status) ? 'bg-blue-500 animate-pulse' : 'bg-blue-500'
+                            }`}
+                            style={{ width: `${job.status === 'COMPLETE' ? 100 : job.contract_count > 0 ? (getCompletedCount(job) / job.contract_count) * 100 : isProcessingStatus(job.status) ? 15 : 0}%` }}
                           />
                         </div>
-                        <span className="text-[10px] font-medium text-slate-500">{job.contracts_complete}/{job.contract_count}</span>
+                        <span className="text-[10px] font-medium text-slate-500">{getCompletedCount(job)}/{job.contract_count}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4 hidden md:table-cell">

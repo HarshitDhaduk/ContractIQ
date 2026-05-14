@@ -4,10 +4,10 @@ import { use } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, getCompletedCount, isFailedStatus, isProcessingStatus, riskLevelFromScore } from "@/lib/api";
 import { StatusBadge } from "@/components/StatusBadge";
 import { RiskBadge } from "@/components/RiskBadge";
-import { ArrowLeft, ChevronRight, Loader2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, Loader2, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
 import { Skeleton, TableRowSkeleton } from "@/components/Skeleton";
 
 interface Props { params: Promise<{ jobId: string }> }
@@ -89,20 +89,59 @@ export default function JobDetailPage({ params }: Props) {
         <div className="lg:col-span-2 p-6 rounded-xl border border-white/[0.07] bg-white/[0.02] flex flex-col justify-between min-h-[160px]">
           <div>
             <h3 className="text-sm font-semibold text-slate-300 mb-4">Execution Summary</h3>
-            {job?.status === "FAILED" && job.error && (
+            {(isFailedStatus(job?.status || '') && (job?.error || job?.error_detail)) && (
               <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 mb-4">
-                <p className="text-xs font-semibold text-red-400 mb-1">Failure Reason:</p>
-                <p className="text-xs text-red-300 font-mono break-all">{job.error}</p>
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                  <p className="text-xs font-semibold text-red-400">
+                    Failed at {job?.error_detail?.stage ? `Stage: ${job.error_detail.stage.toUpperCase()}` : 'Pipeline Execution'}
+                  </p>
+                </div>
+                <p className="text-xs text-red-300 font-mono break-all">{job?.error_detail?.error || job?.error}</p>
               </div>
             )}
+
+            {/* Pipeline Stage Indicator */}
+            {job && isProcessingStatus(job.status) && (
+              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-blue-500/5 border border-blue-500/10">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-400" />
+                <span className="text-xs font-semibold text-blue-400">
+                  {job.status === 'INGESTING' ? 'Registering documents with Gemini...' :
+                   job.status === 'EXTRACTING' ? 'Extracting clauses from contracts...' :
+                   job.status === 'SCORING' ? 'Scoring risk levels...' :
+                   job.status === 'REDLINING' ? 'Generating redline suggestions...' :
+                   job.status === 'FORMATTING' ? 'Generating exports...' :
+                   'Queued for processing...'}
+                </span>
+              </div>
+            )}
+
+            {job?.status === 'PENDING_REVIEW' && (
+              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-500/5 border border-amber-500/10">
+                <Clock className="w-3.5 h-3.5 text-amber-400" />
+                <span className="text-xs font-semibold text-amber-400">Awaiting human review</span>
+              </div>
+            )}
+
+            {job?.status === 'COMPLETE' && (
+              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-xs font-semibold text-emerald-400">All contracts analyzed successfully</span>
+              </div>
+            )}
+
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-medium text-slate-400">Pipeline Progress</span>
-              <span className="text-xs text-slate-500">{job?.contracts_complete || 0} / {job?.contract_count || 0} completed</span>
+              <span className="text-xs text-slate-500">{getCompletedCount(job || {} as any)} / {job?.contract_count || 0} scored</span>
             </div>
             <div className="h-2 bg-white/10 rounded-full overflow-hidden">
               <div
-                className="h-full bg-blue-500 rounded-full transition-all duration-700"
-                style={{ width: `${job?.contract_count > 0 ? (job.contracts_complete / job.contract_count) * 100 : 0}%` }}
+                className={`h-full rounded-full transition-all duration-700 ${
+                  isFailedStatus(job?.status || '') ? 'bg-red-500' :
+                  job?.status === 'COMPLETE' ? 'bg-emerald-500' :
+                  'bg-blue-500 animate-pulse'
+                }`}
+                style={{ width: `${job?.status === 'COMPLETE' ? 100 : (job?.contract_count || 0) > 0 ? Math.max(5, (getCompletedCount(job || {} as any) / (job?.contract_count || 1)) * 100) : 0}%` }}
               />
             </div>
           </div>
@@ -193,7 +232,7 @@ export default function JobDetailPage({ params }: Props) {
                 <div className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 flex items-center gap-2">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Batch Progress:</span>
                   <span className="text-xs text-blue-400 font-mono font-bold">
-                    {job?.contracts_complete || 0} / {job?.contract_count || 0} Analyzed
+                    {getCompletedCount(job || {} as any)} / {job?.contract_count || 0} Analyzed
                   </span>
                 </div>
                 
@@ -269,14 +308,14 @@ export default function JobDetailPage({ params }: Props) {
             <tbody className="divide-y divide-white/[0.04]">
               {contracts.map((c) => {
                 const score = c.risk_report?.contract_risk_score ?? c.risk_score;
-                const level = score >= 70 ? "HIGH" : score >= 40 ? "MEDIUM" : "LOW";
+                const level = score != null ? riskLevelFromScore(score) : undefined;
                 
                 return (
                   <tr key={c.contract_id} className={`hover:bg-white/[0.025] transition-colors group ${c.is_placeholder ? "opacity-60 grayscale animate-pulse" : ""}`}>
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className="text-slate-200 text-xs font-medium truncate max-w-[240px]">
-                          {c.filename ?? c.file_name}
+                          {c.filename}
                           {c.is_placeholder && <span className="ml-2 text-[8px] text-blue-500 font-bold uppercase tracking-widest">Registering...</span>}
                         </span>
                         {c.page_count && <span className="text-[10px] text-slate-500">{c.page_count} pages</span>}
@@ -288,8 +327,8 @@ export default function JobDetailPage({ params }: Props) {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      {score !== undefined ? (
-                        <RiskBadge level={level} showScore={Math.round(score)} />
+                      {score != null ? (
+                        <RiskBadge level={level!} showScore={Math.round(score)} />
                       ) : (
                         <span className="text-xs text-slate-600">—</span>
                       )}
@@ -308,10 +347,10 @@ export default function JobDetailPage({ params }: Props) {
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      {c.redlines?.length ? (
+                      {(c.redline_count ?? c.redlines?.length) ? (
                         <div className="flex items-center gap-1.5">
                           <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                          <span className="text-xs text-slate-300 font-medium">{c.redlines.length} edits</span>
+                          <span className="text-xs text-slate-300 font-medium">{c.redline_count ?? c.redlines?.length} edits</span>
                         </div>
                       ) : (
                         <span className="text-xs text-slate-600">—</span>

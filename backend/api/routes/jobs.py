@@ -84,49 +84,9 @@ async def create_job(
 
 
 async def _run_pipeline(job_id: str, job_record: dict, user_id: str):
-    """Background task that invokes the ADK runner."""
-    print(f"[PIPELINE] Starting background pipeline for job {job_id}")
-    from main import run_contract_review
-    try:
-        await run_contract_review({
-            "job_id": job_id,
-            "user_id": user_id,
-            "document_uris": job_record.get("gcs_uris", []),
-            "playbook_id": job_record["playbook_id"],
-            "reviewer_email": job_record["reviewer_email"],
-            "sla_hours": job_record["sla_hours"],
-            "auto_approve_threshold": job_record["auto_approve_threshold"],
-            "slack_webhook_url": job_record.get("slack_webhook_url", ""),
-        })
-        print(f"[PIPELINE] Pipeline processing finished for job {job_id}, aggregating results...")
-        
-        # Aggregate overall risk score and set COMPLETE
-        db = _db()
-        contracts_docs = db.collection("jobs").document(job_id).collection("contracts").stream()
-        scores = []
-        async for cd in contracts_docs:
-            data = cd.to_dict()
-            if "risk_score" in data:
-                scores.append(data["risk_score"])
-        
-        avg_score = sum(scores) / len(scores) if scores else 0
-        await db.collection("jobs").document(job_id).update({
-            "status": JobStatus.COMPLETE.value,
-            "contracts_complete": len(scores),
-            "overall_risk_score": avg_score,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        })
-        print(f"[PIPELINE] Job {job_id} marked as COMPLETE with avg risk {avg_score}")
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"[PIPELINE] Pipeline FAILED for job {job_id}: {str(e)}")
-        db = _db()
-        await db.collection("jobs").document(job_id).update({
-            "status": JobStatus.FAILED.value,
-            "error": str(e),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        })
+    """Background task that invokes the deterministic pipeline worker."""
+    from workers import run_pipeline
+    await run_pipeline(job_id, job_record, user_id)
 
 
 @router.get("/jobs")
@@ -186,23 +146,54 @@ async def list_job_contracts(job_id: str, user: dict = Depends(get_optional_user
     contracts = []
     async for d in docs:
         data = d.to_dict()
-        data.pop("risk_report", None)
-        data.pop("redlines", None)
-        contracts.append(data)
+        # Return a curated set of fields — keep response lightweight
+        contracts.append({
+            "contract_id": data.get("contract_id"),
+            "job_id": data.get("job_id", job_id),
+            "filename": data.get("filename"),
+            "status": data.get("status"),
+            "contract_type": data.get("contract_type"),
+            "parties": data.get("parties", []),
+            "page_count": data.get("page_count"),
+            "effective_date": data.get("effective_date"),
+            "risk_score": data.get("risk_score"),
+            "risk_level": data.get("risk_level"),
+            "critical_flags": data.get("critical_flags", []),
+            "executive_summary": data.get("executive_summary"),
+            "redline_count": len(data.get("redlines", [])),
+            "review_decision": data.get("review_decision"),
+            "error": data.get("error"),
+            "is_placeholder": False,
+            "created_at": data.get("created_at"),
+            "updated_at": data.get("updated_at"),
+        })
     
     # If no contracts found but job is in progress, return placeholders from filenames/URIs
     if not contracts and job_data.get("status") not in [JobStatus.COMPLETE.value, JobStatus.FAILED.value]:
         filenames = job_data.get("filenames", [])
         if not filenames and "gcs_uris" in job_data:
-            # Fallback for older jobs: extract filenames from URIs
             filenames = [uri.split("/")[-1] for uri in job_data["gcs_uris"]]
             
         for i, name in enumerate(filenames):
             contracts.append({
                 "contract_id": f"pending_{i}",
+                "job_id": job_id,
                 "filename": name,
-                "status": "QUEUED",
-                "is_placeholder": True
+                "status": job_data.get("status", "QUEUED"),
+                "contract_type": None,
+                "parties": [],
+                "page_count": None,
+                "effective_date": None,
+                "risk_score": None,
+                "risk_level": None,
+                "critical_flags": [],
+                "executive_summary": None,
+                "redline_count": 0,
+                "review_decision": None,
+                "error": None,
+                "is_placeholder": True,
+                "created_at": job_data.get("created_at"),
+                "updated_at": job_data.get("updated_at"),
             })
 
     return {"job_id": job_id, "contracts": contracts}

@@ -1,6 +1,6 @@
 """HITL review submission — lawyers approve/override/escalate."""
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 from api.db import get_db
@@ -19,26 +19,22 @@ def _db():
 async def submit_review(
     contract_id: str,
     decision: ReviewDecision,
+    background_tasks: BackgroundTasks,
     user: dict = Depends(get_optional_user),
 ):
-    """Submit a human review decision. Unblocks the HITL agent polling loop."""
+    """Submit a human review decision. Triggers formatting if all contracts reviewed."""
     db = _db()
     now = datetime.now(timezone.utc).isoformat()
 
-    # If job_id or contract_id are missing, try to infer them
     target_job_id = decision.job_id
     target_contract_id = decision.contract_id or contract_id
 
     if not target_job_id:
-        # Search for the job this contract belongs to
         print(f"[API] Review: job_id missing, searching for contract {contract_id}...")
         query = db.collection_group("contracts").where(filter=FieldFilter("contract_id", "==", contract_id)).limit(1)
         docs = [d async for d in query.stream()]
         if not docs:
             raise HTTPException(status_code=404, detail="Contract not found in any job")
-        
-        # The parent of the 'contracts' subcollection doc is the job doc
-        # Path: jobs/{job_id}/contracts/{contract_id}
         target_job_id = docs[0].reference.parent.parent.id
         print(f"[API] Review: Inferred job_id {target_job_id}")
 
@@ -48,21 +44,23 @@ async def submit_review(
     decision_data["job_id"] = target_job_id
     decision_data["contract_id"] = target_contract_id
 
-    # Write decision to job doc — the HITL agent polls this field
-    job_ref = db.collection("jobs").document(target_job_id)
-    await job_ref.update({
+    # Write decision to contract subcollection
+    contract_ref = db.collection("jobs").document(target_job_id).collection("contracts").document(target_contract_id)
+    await contract_ref.update({
         "review_decision": decision_data,
-        "status": decision.action,  # APPROVE / OVERRIDE / ESCALATE
+        "status": decision.action,
         "updated_at": now,
     })
 
-    # Also write to contract subcollection for audit
-    contract_ref = job_ref.collection("contracts").document(target_contract_id)
-    await contract_ref.update({
+    # Write to job doc for backward compatibility
+    job_ref = db.collection("jobs").document(target_job_id)
+    await job_ref.update({
         "review_decision": decision_data,
-        "status": "REVIEWED",
         "updated_at": now,
     })
+
+    # Check if all contracts are now reviewed — trigger formatting if so
+    background_tasks.add_task(_trigger_resume, target_job_id)
 
     return {
         "ok": True,
@@ -71,6 +69,15 @@ async def submit_review(
         "action": decision.action,
         "reviewed_at": now,
     }
+
+
+async def _trigger_resume(job_id: str):
+    """Background task to resume the pipeline after review."""
+    try:
+        from workers import resume_after_review
+        await resume_after_review(job_id)
+    except Exception as e:
+        print(f"[API] Resume after review failed for {job_id}: {e}")
 
 
 @router.get("/jobs/{job_id}/pending-reviews")
@@ -84,7 +91,9 @@ async def get_pending_reviews(job_id: str, user: dict = Depends(get_optional_use
         .where(filter=FieldFilter("status", "==", "PENDING_REVIEW"))
         .stream()
     )
-    pending = [d.async_to_dict() async for d in docs]
+    pending = []
+    async for d in docs:
+        pending.append(d.to_dict())
     return {"job_id": job_id, "pending_count": len(pending), "contracts": pending}
 
 
@@ -92,7 +101,6 @@ async def get_pending_reviews(job_id: str, user: dict = Depends(get_optional_use
 async def get_review_queue(user: dict = Depends(get_optional_user)):
     """Return ALL pending review items across all jobs for the current user."""
     db = _db()
-    # Query jobs belonging to this user that are in PENDING_REVIEW state
     jobs_docs = (
         db.collection("jobs")
         .where(filter=FieldFilter("user_id", "==", user["uid"]))

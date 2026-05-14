@@ -1,5 +1,7 @@
 # ContractIQ
 
+![ContractIQ Marketing Thumbnail](assets/contractiq_thumbnail.png)
+
 > **Multi-agent AI contract intelligence platform** — processes 100s of legal contracts in minutes using Google ADK, Gemini 3.1 Pro (2M token context), Firebase, and Next.js.
 
 [![Google ADK](https://img.shields.io/badge/Google_ADK-1.33.0-4285F4?style=flat-square)](https://google.github.io/adk-docs/)
